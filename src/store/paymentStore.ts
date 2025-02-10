@@ -1,6 +1,7 @@
 import create from 'zustand';
 import { doc, updateDoc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
+import axios from 'axios';
 
 interface PaymentState {
   loading: boolean;
@@ -13,6 +14,27 @@ interface PaymentState {
 export const usePaymentStore = create<PaymentState>((set) => ({
   loading: false,
   error: null,
+
+ // New method to check payment status
+ checkPaymentStatus: async (orderId: string) => {
+  try {
+    set({ loading: true, error: null });
+
+    const response = await axios.get(`https://api.rajyuvrajfood.co.in/check-payment/${orderId}`);
+
+    if (!response.data.success) {
+      throw new Error(response.data.message || 'Failed to fetch payment status');
+    }
+
+    return response.data.payment;  // You can modify this based on your data structure
+  } catch (error) {
+    console.error('Error checking payment status:', error);
+    set({ error: error.message });
+    throw error;
+  } finally {
+    set({ loading: false });
+  }
+},
 
   createOrder: async (amount: number, receipt: string) => {
     try {
