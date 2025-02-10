@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { collection, query, where, getDocs, updateDoc, doc, onSnapshot } from 'firebase/firestore';
+import { collection, query, where, getDocs, updateDoc, doc, onSnapshot, addDoc } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
 import { Printer, CheckCircle, XCircle } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { playNotificationSound } from '../../utils/sound';
 import { calculateTaxes } from '../../utils/calculateTaxes';
-
+import axios from 'axios';
+import { usePaymentStore } from '../../store/paymentStore';
 interface Order {
   id: string;
   items: Array<{
@@ -25,9 +26,46 @@ interface Order {
 function OrderManagement() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [previousOrderCount, setPreviousOrderCount] = useState(0);
+  const { checkPaymentStatus} = usePaymentStore();
 
   useEffect(() => {
     let isFirstRender = true;
+//code
+const checkAndUpdatePayments = async () => {
+  const ordersRef = collection(db, 'transactions');
+  const snapshot = await getDocs(ordersRef);
+
+  snapshot.forEach(async (order) => {
+    const data = order.data();
+    
+    if (data.status === 'pending') {
+     const result = await checkPaymentStatus(data.orderId);
+      if (result.success) {
+        await addDoc(collection(db, 'orders'), {
+          items: data.items,
+          total: data.amount,
+          customerName: data.customerName,
+          customerPhone: data.customerPhone,
+          seatNumber:data.seatNumber,
+          status: 'success',
+          screen:data.screen,
+          orderId: result.razorpay_order_id,
+          paymentId: result.razorpay_payment_id,
+          signature: result.razorpay_signature,
+          createdAt: new Date().toISOString()
+        });
+        await updateDoc(doc(db, 'transactions', order.id), {
+          status: 'success',
+          verified: true,
+          updatedAt: new Date().toISOString() });
+      }
+       else {
+        console.log(`Payment still pending for order: ${order.id}`);}
+    }
+  })
+};
+checkAndUpdatePayments()
+
     const q = query(
       collection(db, 'orders'),
       where('status', '==', 'pending')
@@ -87,7 +125,9 @@ ${order.items
       ).toFixed(2)}`
   )
   .join('\n')}
-
+      ---------------------------------
+      Sub Total            :₹ ${subtotal.toFixed(2)}
+      ---------------------------------
       Handling Charges(4%) : ₹${handlingCharges.toFixed(2)}
       ---------------------------------
       Total Amount   : ₹${order.total.toFixed(2)}
